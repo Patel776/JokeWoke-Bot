@@ -3,7 +3,7 @@ import time
 import random
 
 # 🔐 Paste your Telegram Bot Token here
-TELEGRAM_BOT_TOKEN = '8337172364:AAGfZB3jOPL_B9Xk4AUEC05GEs0HpK3-yMk'
+TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
 BASE_URL = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/'
 
 # 🧠 Chatbot logic
@@ -99,4 +99,5 @@ def run_bot():
 # 🚀 Start the bot
 if __name__ == '__main__':
     run_bot()
+
 
