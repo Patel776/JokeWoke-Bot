@@ -1,105 +1,82 @@
 import os
 import requests
-import time
-import random
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
-# 🔐 Paste your Telegram Bot Token here
-TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
-BASE_URL = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/'
+API_URL = "https://echo-mind-api.vercel.app/api/niket?query="
 
-# 🧠 Chatbot logic
-def get_bot_response(user_input):
-    user_input = user_input.lower().strip()
+# Store memory per user
+user_memory = {}
 
-    greetings = [
-        "Hey! How are you doing today?",
-        "Hi there! 😊 What's up?",
-        "Hello! Hope you're having a great day!",
-        "Yo! Feeling good?"
-    ]
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_memory[user_id] = []
 
-    mood_responses = [
-        "I'm just a bot, but I'm feeling chatty today! How about you?",
-        "Doing awesome! Thanks for asking. What’s new with you?",
-        "Feeling great! Ready to talk about anything you like.",
-        "I'm good! Wanna share something fun?"
-    ]
+    await update.message.reply_text(
+        "Hello! I'm your AI bot 🤖\n\nAsk me anything!"
+    )
 
-    name_responses = [
-        "You can call me ChatMaster, your talkative buddy!",
-        "I'm Chatster, your friendly Telegram companion!",
-        "They call me Chatster. I love a good chat!",
-        "Chatster here! Always ready to talk."
-    ]
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_memory[user_id] = []
 
-    bye_responses = [
-        "Bye for now! Catch you later 👋",
-        "See ya! Take care 😊",
-        "Goodbye! It was fun chatting with you!",
-        "Later, alligator 🐊"
-    ]
+    await update.message.reply_text("Memory cleared! 😊")
 
-    default_followups = [
-        "Hmm, interesting... tell me more!",
-        "That sounds cool. What else is on your mind?",
-        "I'm listening! Go ahead.",
-        "You’ve got my attention. Keep going!"
-    ]
+async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_message = update.message.text
 
-    if user_input == "/start":
-        return random.choice([
-            "Hey there! 👋 I'm ChatMaster, your chat buddy. Let's have a fun conversation!",
-            "Hi! I'm ChatMaster 🤖. Ready to chat? Just say anything!",
-            "Welcome! I'm ChatMaster. Ask me anything or just say hi!",
-            "Yo! I'm ChatMaster. Let's get this convo rolling!"
-        ])
-    elif user_input in ["hello", "hi", "hii", "hyy", "hey"]:
-        return random.choice(greetings)
-    elif "how are you" in user_input or "how r u" in user_input:
-        return random.choice(mood_responses)
-    elif "your name" in user_input or "who are you" in user_input:
-        return random.choice(name_responses)
-    elif user_input in ["bye", "goodbye", "see you"]:
-        return random.choice(bye_responses)
-    else:
-        return random.choice(default_followups)
+    # Typing animation
+    await context.bot.send_chat_action(update.effective_chat.id, "typing")
 
-# 📩 Send message to user
-def send_message(chat_id, text):
-    url = BASE_URL + 'sendMessage'
-    payload = {'chat_id': chat_id, 'text': text}
-    requests.post(url, data=payload)
+    # If new user, create memory
+    if user_id not in user_memory:
+        user_memory[user_id] = []
 
-# 🔄 Poll for new messages
-def run_bot():
-    print("🤖 Chatster is now running on Telegram...")
-    last_update_id = None
+    # Add user message to memory
+    user_memory[user_id].append(f"User: {user_message}")
 
-    while True:
-        url = BASE_URL + 'getUpdates'
-        if last_update_id:
-            url += f'?offset={last_update_id + 1}'
+    # Take last 5 messages for context
+    memory_context = "\n".join(user_memory[user_id][-5:])
+    final_query = memory_context + "\nUser: " + user_message
 
-        response = requests.get(url)
-        data = response.json()
+    # API request
+    try:
+        response = requests.get(API_URL + final_query)
+        bot_reply = response.text.strip()
+    except:
+        bot_reply = "⚠️ API error. Please try again later."
 
-        if 'result' in data:
-            for update in data['result']:
-                if 'message' in update:
-                    message = update['message']
-                    chat_id = message['chat']['id']
-                    user_text = message.get('text', '')
+    # Save bot reply
+    user_memory[user_id].append(f"Bot: {bot_reply}")
 
-                    bot_reply = get_bot_response(user_text)
-                    send_message(chat_id, bot_reply)
+    await update.message.reply_text(bot_reply)
 
-                    last_update_id = update['update_id']
+def main():
+    # ✔ Get BOT_TOKEN from environment variable ONLY
+    TOKEN = os.getenv("BOT_TOKEN")
 
-        time.sleep(1)
+    if not TOKEN:
+        print("❌ ERROR: BOT_TOKEN is missing in environment!")
+        return
 
-# 🚀 Start the bot
-if __name__ == '__main__':
-    run_bot()
+    app = ApplicationBuilder().token(TOKEN).build()
 
+    # Commands
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("reset", reset))
 
+    # Chat handler
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
+    print("🚀 Bot is running successfully using BOT_TOKEN from env...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
