@@ -1,66 +1,69 @@
 import os
 import requests
-from fastapi import FastAPI, Request
+import asyncio
+from fastapi import FastAPI
 import uvicorn
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-API_URL = "https://echo-mind-api.vercel.app/api/kinsu?query="
 
-# ---------- FASTAPI APP ----------
+API_URL = "https://echo-mind-api.vercel.app/api/niket?query="
+
+# ---------------- FASTAPI APP ----------------
 app = FastAPI()
 
 @app.get("/")
 def home():
-    return {"status": "Bot is running successfully!"}
+    return {"status": "Bot deployed successfully!"}
 
-# ---------- TELEGRAM BOT ----------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://jokewoke-bot.onrender.com")
 
-if not BOT_TOKEN:
-    raise Exception("BOT_TOKEN missing in environment!")
+# --------------- TELEGRAM BOT HANDLERS ----------------
 
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first = update.effective_user.first_name
-    await update.message.reply_text(f"👋 Hello {first}! How can I help you?")
+    msg = f"👋 Hello {first}! Welcome to the bot."
+    await update.message.reply_text(msg)
 
-# Chat handler
+
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
+    user_msg = update.message.text
+
     try:
-        res = requests.get(API_URL + user_text)
-        js = res.json()
-        reply = js.get("response", "Okay")
-    except:
-        reply = "API error."
+        r = requests.get(API_URL + user_msg)
+        data = r.json()
+        bot_reply = data.get("response", "Okay")
+    except Exception:
+        bot_reply = "Okay"
 
-    await update.message.reply_text(reply)
+    await update.message.reply_text(bot_reply)
 
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
-# ---------- WEBHOOK ROUTES ----------
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return {"ok": True}
+# ----------- START TELEGRAM BOT IN ASYNC LOOP -----------
 
-# ---------- SET WEBHOOK ON STARTUP ----------
+async def start_bot():
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    if not BOT_TOKEN:
+        raise Exception("BOT_TOKEN is missing in environment variables!")
+
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+
+    print("Bot started polling...")
+    await application.run_polling()
+
+
+# ----- MAIN STARTUP (Runs FastAPI + Telegram Bot Together) ------
+
 @app.on_event("startup")
-async def set_webhook():
-    if RENDER_URL:
-        webhook = f"{RENDER_URL}/webhook"
-        await telegram_app.bot.set_webhook(webhook)
-        print("Webhook set:", webhook)
-    else:
-        print("❌ RENDER_EXTERNAL_URL missing")
+async def startup_event():
+    asyncio.create_task(start_bot())
 
-# ---------- RUN ----------
+
+# ------------------ RUN UVICORN ------------------
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
